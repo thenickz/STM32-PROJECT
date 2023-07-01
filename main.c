@@ -67,9 +67,9 @@ TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 
 /* USER CODE BEGIN PV */
-uint8_t flag1 = 0;
-uint8_t flag2 = 0;
-uint8_t USB_Buffer[255];
+uint8_t flag1 = 0;    //flag do botao de incremento
+uint8_t flag2 = 0;    //flag do botao de decremento
+uint8_t USB_Buffer[255]; //vetor com as informacoes do usb
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -81,28 +81,30 @@ static void MX_TIM3_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
+/*funcao que pisca led interno da bluepill*/
 void toggle_blink(){
 	HAL_GPIO_TogglePin(LED_debug);
 	HAL_Delay(100);
 	HAL_GPIO_TogglePin(LED_debug);
 }
-
+/*funcao que escreve no painel oled o RPM atual da Fan*/
 void ssd1306_RPM(uint16_t rpm) {
 
-    uint8_t y = 0;
-    ssd1306_Fill(Black);
+    uint8_t y = 0;        				// ponto inicial
+    ssd1306_Fill(Black); 				// preenche tudo com preto pelo oled
 
     char str[256];
-    sprintf((char *)str, "Fan Speed: %u RPM", rpm);
+    sprintf((char *)str, "Fan Speed: %u RPM", rpm);	// prepara string com o rpm atual
 
     #ifdef SSD1306_INCLUDE_FONT_6x8
-    ssd1306_SetCursor(2, y);
-    ssd1306_WriteString(str, Font_6x8, White);
+    ssd1306_SetCursor(2, y);				// posiciona o cursor na primeira linha e primeira coluna
+    ssd1306_WriteString(str, Font_6x8, White);  	// escreve no display a string com fonte 6x8 na cor branca
     #endif
 
-    ssd1306_UpdateScreen();
+    ssd1306_UpdateScreen();				// Atualiza a tela
 }
-//
+/*Funcao para criar um arquivo no sd card*/
+/*contem varios printf comentados para verificar cada processo se necessário*/
 void process_SD_card( void )
 {
   FATFS       FatFs;                //Fatfs handle
@@ -112,16 +114,16 @@ void process_SD_card( void )
 
   do
   {
-    //Mount the SD Card
-    fres = f_mount(&FatFs, "", 1);    //1=mount now
-    if (fres != FR_OK)
+    //Monta o SD Card
+    fres = f_mount(&FatFs, "", 1);    			// 1 = montar agora
+    if (fres != FR_OK) 					// se nao localizar o cartão encerra a funcao
     {
       //printf("No SD Card found : (%i)\r\n", fres);
       break;
     }
     //printf("SD Card Mounted Successfully!!!\r\n");
 
-    //Read the SD Card Total size and Free Size
+    /*Le o tamanho total do cartão SD e o tamanho livre*/
     FATFS *pfs;
     DWORD fre_clust;
     uint32_t totalSpace, freeSpace;
@@ -132,40 +134,40 @@ void process_SD_card( void )
 
     //printf("TotalSpace : %lu bytes, FreeSpace = %lu bytes\n", totalSpace, freeSpace);
 
-    //Open the file
+    /*Abre o arquivo*/
     fres = f_open(&fil, "info.txt", FA_WRITE | FA_READ | FA_CREATE_ALWAYS);
-    if(fres != FR_OK)
+    if(fres != FR_OK)							// se nao conseugir abrir, encerra
     {
       //printf("File creation/open Error : (%i)\r\n", fres);
       break;
     }
 
     //printf("Writing data!!!\r\n");
-    //write the data
+    // Escreve dados
     f_puts("Trabalho Finalmente ta pronto", &fil);
-
-    //close your file
+	  
+    //Fecha arquivo
     f_close(&fil);
 
-    //Open the file
+    //Abre arquivo
     fres = f_open(&fil, "info.txt", FA_READ);
-    if(fres != FR_OK)
+    if(fres != FR_OK)						// se nao conseguir abrir, encerra
     {
       //printf("File opening Error : (%i)\r\n", fres);
       break;
     }
 
-    //read the data
+    //Le os dados do arquivo
     f_gets(buf, sizeof(buf), &fil);
 
     //printf("Read Data : %s\n", buf);
 
-    //close your file
+    // Fecha o arquvo
     f_close(&fil);
     //printf("Closing File!!!\r\n");
   } while( 0 );
 
-  //We're done, so de-mount the drive
+  //No final, desmonta o sd card
   f_mount(NULL, "", 0);
   //printf("SD Card Unmounted Successfully!!!\r\n");
 }
@@ -183,20 +185,19 @@ void process_SD_card( void )
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-	uint32_t tick;
-	uint16_t usb_fan_speed;
-	uint16_t usb_pot_value;
-	uint16_t usb_sd_status = 0;
-	uint16_t usb_buzzer_value;
-
+	uint32_t tick; 			// armazena valor do systick
+	/* Variaveis para USB */
+	uint16_t usb_fan_speed;		// armazena a velocidade
+	uint16_t usb_pot_value;		// armazena valor do potenciometro
+	uint16_t usb_sd_status = 0;	// armazena se o cartao sd foi gravado
+	uint16_t usb_buzzer_value;	// armazena valor do buzzer
+	// armazena string que vai enviar todos os dados para o usb
 	char json_string[] = "{\"FAN\": %u, \"POT\": %u, \"SD\": %u, \"BUZZER\": %u} \n";
 
-	//char result_string[256];
-
-
-	uint16_t BuzzerValue = 0;
-	uint16_t estouro = 0;
-	uint16_t readValue = 0;
+	/* Variaveis para controlar melhor a lógica dos componentes*/ 
+	uint16_t BuzzerValue = 0; // Valor do Buzzer atual
+	uint16_t estouro = 0;	  // Valor de estouro do volume do Buzzer
+	uint16_t readValue = 0;	  // guarda o valor lido no adc do potencimetro
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -225,11 +226,13 @@ int main(void)
   MX_USB_DEVICE_Init();
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
-  HAL_ADCEx_Calibration_Start(&hadc1);
-  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
-  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
-  ssd1306_Init();
-  HAL_GPIO_WritePin(LED_debug, 1);
+	
+  /* Parametros de inicialização */
+  HAL_ADCEx_Calibration_Start(&hadc1); 		// prepara o ADC1 para funcionar
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);	// Ativa o gerador de pwm do canal 3 do timer 2
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);	// Ativa o gerador de pwm do canal 4 do timer 4
+  ssd1306_Init();				// Inicia o OLED
+  HAL_GPIO_WritePin(LED_debug, 1);		// Deixa o led_debug desligado
 
   /* USER CODE END 2 */
 
@@ -239,75 +242,75 @@ int main(void)
 
   while (1)
   {
-	  /* verifica se chegou requisição no usb*/
+	  /* verifica se chegou requisição no usb */
 	  if (USB_Buffer[0] != 0){
 		  switch(USB_Buffer[0]){
-			  case 'I':{
+			  case 'I':{		// se for "I" ativa a flag1 para Incremento
 				  flag1 = 1;
 			  }
 			  case 'D':{
-				  flag2 = 1;
+				  flag2 = 1;	// se for "D" ativa a flag2 para Decremento
 			  }
 		  }
 	  }
 
-	  // buzzer com botao e inte_ex
+	  /* buzzer com botao e interrupcao externa */
 	  if (flag1){
-		  if (BuzzerValue + incremento <= limite){
-			  BuzzerValue += incremento;
+		  
+		  if (BuzzerValue + incremento <= limite){	// primeiro verifica se pode incrementar sem Overflow(estouro)
+			  BuzzerValue += incremento;		// se sim, incrementa
 		  }else{
-			  estouro = limite - BuzzerValue;
-			  BuzzerValue += estouro;
+			  estouro = limite - BuzzerValue;	// se nao, descobre quanto que falta para o estouro
+			  BuzzerValue += estouro;		// incrementa apenas o quanto falta para o estouro
 		  }
-		  flag1 = 0;
-		  toggle_blink();
+		  flag1 = 0;					// reseta a flag da interrupcao externa
+		  toggle_blink();				// led_debug para ter um feedback que o botao foi pressionado e executado como esperado
 
 	  }
-	  if (flag2){
-		  if (BuzzerValue - decremento >= 0){
-			  BuzzerValue -= decremento;
+	  if (flag2){						
+		  if (BuzzerValue - decremento >= 0){		// primeiro verifica se pode decrementar sem Overflow(estouro)
+			  BuzzerValue -= decremento;		// se sim, decrementa
 		  }else{
-			  estouro = BuzzerValue;
-			  BuzzerValue -= estouro;
+			  estouro = BuzzerValue;		// se nao, descobre quanto que falta para o estouro
+			  BuzzerValue -= estouro;		// decrementa apenas o quanto falta para o estouro
 		  }
-		  flag2 = 0;
-		  toggle_blink();
+		  flag2 = 0;					// reseta a flag da interrupcao externa
+		  toggle_blink();				// led_debug para ter um feedback que o botao foi pressionado e executado como esperado
 	  }
-	  Buzzer = BuzzerValue;
+	  Buzzer = BuzzerValue;					//PWM do Buzzer recebe algum valor
 
 	  /* fan com ponteciometro */
-	  if (HAL_GPIO_ReadPin(BT_SEL) == 1){
+	  if (HAL_GPIO_ReadPin(BT_SEL) == 1){			// verifica se o BT_SEL nao esta pressionado
+	
+		  HAL_ADC_Start(&hadc1);			// inicia o ADC do potenciometro
+		  HAL_ADC_PollForConversion(&hadc1,1);		// Prepara para receber informacao do ADC
+		  readValue = POT;				// armazena o valor atual recebido
+		  Fan = 65535*readValue/4095;			// converte o valor do ADC para a resolucao do PWM
+		  HAL_Delay(1);					// Delay de 1ms
 
-		  HAL_ADC_Start(&hadc1);
-		  HAL_ADC_PollForConversion(&hadc1,1);
-		  readValue = POT;
-		  Fan = 65535*readValue/4095;
-		  HAL_Delay(1);
-
-	  }else{
+	  }else{						// se BT_SEL estiver pressionado
 		  /* Lógica de implementação do SD_Card*/
-		  readValue = 0;
-		  Fan = readValue;
-		  if (!usb_sd_status){
-			  //process_SD_card();
-			  usb_sd_status = 1;
+		  readValue = 0;				// armazena zero
+		  Fan = readValue;				// velocidade da fan zerada
+		  if (!usb_sd_status){				// verifica se o sd card nao foi gravado
+			  //process_SD_card();			// grava dados no sd card (como acabou a memoria do stm32 essa parte foi comentada)
+			  usb_sd_status = 1;			// atualiza o status do sd card para gravado
 		  }
-		  /*SDCARD*/
+	  }
+
+	  /* Lógica USB e OLED */
+	  if ((HAL_GetTick() - tick ) > 333){										// a cada 333ms o USB e atualizado
+		  tick = HAL_GetTick();											// armazena valor atual do systick
+		  ssd1306_RPM(16500*readValue/4095);									// escreve o valor em RPM do OLED
+		  usb_fan_speed = readValue;										// armazena o valor do ADC para o fan
+		  usb_pot_value = readValue;										// armazena o valor do ADC para o potenciometro
+		  usb_buzzer_value = BuzzerValue;									// armazena o valor do timer do Buzzer
+		  sprintf(USB_Buffer, json_string, usb_fan_speed, usb_pot_value, usb_sd_status, usb_buzzer_value);	// prepara a string para se parecer com um JSON
+		  CDC_Transmit_FS(USB_Buffer, strlen(USB_Buffer));							// envia a string para o usb, NodeRED recebe os dados
 
 	  }
 
-	  if ((HAL_GetTick() - tick ) > 333){
-		  tick = HAL_GetTick();
-		  ssd1306_RPM(16500*readValue/4095);
-		  usb_fan_speed = readValue;
-		  usb_pot_value = readValue;
-		  usb_buzzer_value = BuzzerValue;
-		  sprintf(USB_Buffer, json_string, usb_fan_speed, usb_pot_value, usb_sd_status, usb_buzzer_value);
-		  CDC_Transmit_FS(USB_Buffer, strlen(USB_Buffer));
-
-	  }
-
-	  memset(USB_Buffer, 0, 255);
+	  memset(USB_Buffer, 0, 255);											// zera todas as posicoes
 
 
 
@@ -653,15 +656,17 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+/* Funcao com a Logica da Interrupcao Externa */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
     if(GPIO_Pin == BT_INC)
     {
-    	flag1 = 1;
+    	flag1 = 1;		// flag que o botao de incremento foi pressionado
     }
     if(GPIO_Pin == BT_DEC)
     {
-    	flag2 = 1;
+    	flag2 = 1;		// flag que o botao de decremento foi pressionado
     }
 
 }
